@@ -4,6 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0d0e12">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Loop">
 <title>Loop</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -262,6 +269,7 @@ const pl = id => S.playlists.find(p => p.id === id);
 const thumb = id => `https://i.ytimg.com/vi/${id}/mqdefault.jpg`;
 const isLiked = id => pl('liked').tracks.some(t => t.id === id);
 let queue = [], qi = -1, ready = false, playing = false, dur = 0, results = [], pendingPlay = null;
+let wantPlay = false, userPaused = false, lastPos = 0;
 let queueSrc = null, shuffleHist = [], view = 'home', viewArg = null, lastQuery = '';
 
 document.querySelectorAll('[data-i]').forEach(el => { el.outerHTML = I[el.dataset.i] || ''; });
@@ -295,7 +303,9 @@ window.onYouTubeIframeAPIReady = () => {
         playing = e.data === YT.PlayerState.PLAYING || e.data === YT.PlayerState.BUFFERING;
         if (e.data === YT.PlayerState.ENDED) next(true);
         paintPlay();
-        if (e.data === YT.PlayerState.PLAYING) { dur = player.getDuration(); $('#t-dur').textContent = fmt(dur); }
+        if (e.data === YT.PlayerState.PLAYING) { dur = player.getDuration(); $('#t-dur').textContent = fmt(dur); wantPlay = true; userPaused = false; }
+        if (e.data === YT.PlayerState.PAUSED && !document.hidden && !userPaused) wantPlay = false;
+        msState();
       },
       onError(){ toast('เล่นเพลงนี้ไม่ได้ ข้ามไปเพลงถัดไป'); setTimeout(() => next(true), 900); }
     }});
@@ -303,6 +313,7 @@ window.onYouTubeIframeAPIReady = () => {
 setInterval(() => {
   if (!ready || !player.getCurrentTime || dur <= 0) return;
   const c = player.getCurrentTime(), p = (c / dur) * 100;
+  if (Math.abs(c - lastPos) >= 5) { lastPos = c; msPos(); }
   $('#t-cur').textContent = fmt(c);
   if (!seeking) { $('#seek').value = (c/dur)*1000; $('#seek').style.setProperty('--p', p+'%'); }
   $('#mini-p').style.setProperty('--p', p+'%');
@@ -328,7 +339,7 @@ function startCurrent(){
   $('#full-title').textContent = t.title;
   document.title = t.title + ' · Loop';
   $('#video').classList.remove('hide');
-  playing = true; paintPlay(); paintLike(); highlight();
+  playing = true; paintPlay(); paintLike(); highlight(); msMeta(t);
 }
 function current(){ return queue[qi] || null; }
 function highlight(){
@@ -351,7 +362,7 @@ function paintLike(){
 function togglePlay(){
   if (!current()) { const l = pl('liked').tracks.length ? pl('liked') : S.playlists.find(p => p.tracks.length); if (l) playList(l.tracks, 0, l.id); else toast('ยังไม่มีเพลง ลองวางลิงก์ YouTube ก่อน'); return; }
   if (!ready) return;
-  if (playing) player.pauseVideo(); else player.playVideo();
+  if (playing) { userPaused = true; wantPlay = false; player.pauseVideo(); } else { userPaused = false; wantPlay = true; player.playVideo(); }
 }
 function next(auto){
   if (!queue.length) return;
@@ -539,7 +550,9 @@ function vLibrary(){
     <div class="grid">${S.playlists.map(p => `<button class="card" data-go="#pl/${esc(p.id)}">${coverOf(p)}<b>${esc(p.name)}</b><small>${p.tracks.length} เพลง</small></button>`).join('')}</div>
     <div class="section"><h2>ตั้งค่าการค้นหา</h2></div>
     <form class="field" data-form="key"><input name="q" type="password" value="${esc(S.apiKey)}" placeholder="YouTube Data API v3 key (ไม่บังคับ)" autocomplete="off"><button class="btn primary">${I.key}บันทึก</button></form>
-    <p class="hint">ไม่ใส่ก็ใช้ได้ (โหมดวางลิงก์) · ขอคีย์ฟรีได้ที่ <a href="https://console.cloud.google.com/apis/library/youtube.googleapis.com" target="_blank" rel="noopener">Google Cloud Console</a> · คีย์เก็บไว้ในเบราว์เซอร์เครื่องนี้เท่านั้น</p>`;
+    <p class="hint">ไม่ใส่ก็ใช้ได้ (โหมดวางลิงก์) · ขอคีย์ฟรีได้ที่ <a href="https://console.cloud.google.com/apis/library/youtube.googleapis.com" target="_blank" rel="noopener">Google Cloud Console</a> · คีย์เก็บไว้ในเบราว์เซอร์เครื่องนี้เท่านั้น</p>
+    <div class="section"><h2>ฟังตอนปิดจอ</h2></div>
+    <p class="hint" style="margin-top:0">Loop พยายามเล่นต่อตอนปิดจอ และมีปุ่มควบคุมบนหน้าจอล็อก แต่ iPhone/Safari และ Chrome บน Android มักหยุดวิดีโอ YouTube เมื่อปิดจอ (บาง Android กด ▶ บนหน้าจอล็อกให้เล่นต่อได้) ไม่รับประกันว่าจะเล่นต่อได้ทุกเครื่อง · ทางฟรีที่ได้ผลที่สุด: เปิด Loop ในเบราว์เซอร์ <b>Brave</b> แล้วเปิด “เล่นสื่อเบื้องหลัง” (Background play) ในการตั้งค่า · หรือใช้ YouTube Premium · กด “เพิ่มไปยังหน้าจอโฮม” เพื่อใช้ Loop เหมือนแอป</p>`;
 }
 function vPlaylist(id){
   const p = pl(id);
@@ -606,6 +619,46 @@ async function doSearch(q){
     if (!results.length) toast('ไม่พบผลลัพธ์');
     refresh();
   } catch (err) { toast('ค้นหาไม่สำเร็จ: ' + err.message); }
+}
+
+/* ---------- background / lock-screen (best effort) ---------- */
+const MS = 'mediaSession' in navigator ? navigator.mediaSession : null;
+function msMeta(t){
+  if (!MS || !t) return;
+  try {
+    MS.metadata = new MediaMetadata({ title:t.title, artist:t.by || 'YouTube', album:'Loop',
+      artwork:[ { src:`https://i.ytimg.com/vi/${t.id}/mqdefault.jpg`, sizes:'320x180', type:'image/jpeg' },
+                { src:`https://i.ytimg.com/vi/${t.id}/hqdefault.jpg`, sizes:'480x360', type:'image/jpeg' } ] });
+  } catch (e) {}
+  msState();
+}
+function msState(){ if (MS) try { MS.playbackState = current() ? (playing ? 'playing' : 'paused') : 'none'; } catch (e) {} }
+function msPos(){
+  if (!MS || !MS.setPositionState || !ready || !player.getCurrentTime || !(dur > 0)) return;
+  try { MS.setPositionState({ duration:dur, position:Math.min(dur, Math.max(0, player.getCurrentTime())), playbackRate:1 }); } catch (e) {}
+}
+if (MS) {
+  const h = (a, f) => { try { MS.setActionHandler(a, f); } catch (e) {} };
+  h('play', () => { userPaused = false; wantPlay = true; if (ready && current()) player.playVideo(); else togglePlay(); });
+  h('pause', () => { userPaused = true; wantPlay = false; if (ready) player.pauseVideo(); });
+  h('previoustrack', () => prev());
+  h('nexttrack', () => next(false));
+  h('seekto', d => { if (ready && d && typeof d.seekTime === 'number') { player.seekTo(d.seekTime, true); setTimeout(msPos, 300); } });
+}
+function nudge(){
+  // ask the official player to continue; if the browser/OS refuses, nothing more is done
+  if (!ready || !wantPlay || userPaused || !player.getPlayerState) return;
+  const st = player.getPlayerState();
+  if (st === YT.PlayerState.PAUSED || st === YT.PlayerState.CUED) { try { player.playVideo(); } catch (e) {} }
+}
+function onHide(){ if (!wantPlay) return; [0, 400, 1500, 4000].forEach(ms => setTimeout(nudge, ms)); }
+document.addEventListener('visibilitychange', () => { if (document.hidden) onHide(); else { nudge(); setTimeout(nudge, 500); msPos(); } });
+window.addEventListener('pagehide', onHide);
+window.addEventListener('pageshow', () => setTimeout(nudge, 300));
+/* silent-audio keepalive intentionally not used: it doesn't keep a YouTube iframe alive on iOS/Android and can steal the media session from the real player */
+
+if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js', { scope:'./' }).catch(() => {}));
 }
 
 /* ---------- keyboard ---------- */
